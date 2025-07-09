@@ -1,12 +1,4 @@
-"""
-agents.py – rewritten 07 Jul 2025
----------------------------------
-Utility “agents” used by TaskOrchestrator.
 
-If a service (Slack, Google Calendar, Twilio, etc.) is not configured in
-`.env`, the related agent will degrade gracefully instead of crashing
-FastAPI with a 500.
-"""
 from __future__ import annotations
 
 import os
@@ -32,10 +24,8 @@ from googleapiclient.errors import HttpError
 
 from twilio.rest import Client
 
-# -----------------------------------------------------------------------
 #               ENVIRONMENT & PATH SET‑UP
-# -----------------------------------------------------------------------
-load_dotenv()  # makes the .env values available immediately
+load_dotenv()  
 
 BASE_DIR            = os.path.dirname(os.path.abspath(__file__))
 CREDENTIALS_PATH    = os.path.join(BASE_DIR, "credentials.json")
@@ -48,9 +38,7 @@ TWILIO_ACCOUNT_SID  = os.getenv("TWILIO_ACCOUNT_SID", "")
 TWILIO_AUTH_TOKEN   = os.getenv("TWILIO_AUTH_TOKEN", "")
 TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER", "")
 
-# -----------------------------------------------------------------------
 #               SLACK AGENT
-# -----------------------------------------------------------------------
 class SlackAgent:
     """Send messages to Slack asynchronously."""
     def __init__(self, token: str = SLACK_BOT_TOKEN):
@@ -81,12 +69,9 @@ class SlackAgent:
         try:
             return await self.client.chat_postMessage(channel=channel, text=msg)
         except SlackApiError as e:
-            # Don’t kill FastAPI – just surface the reason up‑stack
             raise RuntimeError(f"Slack API error: {e.response['error']}")
 
-# -----------------------------------------------------------------------
 #               KNOWLEDGE AGENT (local txt files + Gemini query)
-# -----------------------------------------------------------------------
 class KnowledgeAgent:
     def __init__(self, directory: str = "knowledge_base") -> None:
         self.directory = os.path.join(BASE_DIR, directory)
@@ -134,9 +119,7 @@ class KnowledgeAgent:
         except Exception as e:
             return f"Gemini request failed: {e}"
 
-# -----------------------------------------------------------------------
 #               SEARCH AGENT
-# -----------------------------------------------------------------------
 class SearchAgent:
     async def run(self, query: str) -> str:
         try:
@@ -146,9 +129,7 @@ class SearchAgent:
         except Exception as e:
             return f"Search error: {e}"
 
-# -----------------------------------------------------------------------
 #               CALENDAR AGENT  (lazy‑auth)
-# -----------------------------------------------------------------------
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
 class CalendarAgent:
     """
@@ -177,7 +158,6 @@ class CalendarAgent:
                         "Google Calendar is not configured – credentials.json missing."
                     )
                 flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_PATH, SCOPES)
-                # WARNING: opens a local browser – only do this on a workstation
                 self.creds = flow.run_local_server(port=0)
 
             with open(TOKEN_PATH, "w") as token:
@@ -203,9 +183,7 @@ class CalendarAgent:
         except HttpError as e:
             raise RuntimeError(f"Google Calendar API error: {e}")
 
-# -----------------------------------------------------------------------
 #               COMMUNICATION AGENT (Twilio SMS / voice)
-# -----------------------------------------------------------------------
 class CommunicationAgent:
     def __init__(self) -> None:
         if not all([TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER]):
