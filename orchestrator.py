@@ -10,10 +10,7 @@ from agents import SlackAgent, KnowledgeAgent, SearchAgent, CalendarAgent, Commu
 load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_API_URL = (
-    f"https://generativelanguage.googleapis.com/v1beta/models/"
-    f"gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
-)
+GEMINI_API_URL = ( ={GEMINI_API_KEY}")
 
 PLANNER_PROMPT_TEMPLATE = """
 You are an expert planning agent. Your job is to create a plan to fulfill a user's request.
