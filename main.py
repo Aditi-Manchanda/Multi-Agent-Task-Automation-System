@@ -11,12 +11,9 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-# These imports must happen AFTER load_dotenv()
 import agents 
 import orchestrator 
 
-# Set credentials from environment variables at startup
-# This is the correct way to pass secrets to your modules
 orchestrator.GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
 os.environ['GEMINI_API_KEY_HOLDER'] = orchestrator.GEMINI_API_KEY
 
@@ -77,7 +74,6 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
         manager.disconnect(websocket)
         print("WebSocket disconnected.")
 
-# This will serve your index.html file from the new 'static' folder
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
 
 @app.get("/")
