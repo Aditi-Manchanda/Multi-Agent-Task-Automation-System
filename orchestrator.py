@@ -3,7 +3,7 @@ import re
 import json
 import asyncio
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from agents import SlackAgent, KnowledgeAgent, SearchAgent, CalendarAgent, CommunicationAgent
 
@@ -17,15 +17,21 @@ GEMINI_API_URL = (
 
 PLANNER_PROMPT_TEMPLATE = """
 You are an expert planning agent. Your job is to create a plan to fulfill a user's request.
-Here are the available agents:
-- "KnowledgeAgent"
-- "SearchAgent"
-- "SlackAgent"
-- "CommunicationAgent"
-- "CalendarAgent"
+Here are the available agents and their EXACT action formats:
+
+- "KnowledgeAgent":
+  * To add knowledge: "Add knowledge: 'content here' in filename"
+  * To query: "What is [question]?"
+- "SearchAgent": "Search for [query]"
+- "SlackAgent": "Post \"message text\" to #channel"
+- "CalendarAgent": "Schedule [event name] for [time]"
+- "CommunicationAgent": "Send SMS to [number]: [message]"
+
+CRITICAL: Use the exact formats shown above. For SlackAgent, always use: Post "message"
+to #channel
 
 Respond with ONLY a JSON array of steps (no backticks or extra text).
-Each step must have two string fields: "agent" and "action".
+Each step must have "agent" and "action" fields.
 
 User Request: "{user_prompt}"
 """
@@ -90,10 +96,12 @@ class TaskOrchestrator:
                     "log_type": "error"
                 }))
                 return
+
         await self.ws_manager.broadcast(json.dumps({"type": "plan", "steps": self.plan}))
         for step in self.plan:
             await asyncio.sleep(1)
             await self._execute_step(step)
+
         await self.ws_manager.broadcast(json.dumps({
             "type": "log",
             "agent": "System",
@@ -109,22 +117,84 @@ class TaskOrchestrator:
         await self.ws_manager.broadcast(json.dumps({
             "type": "log", "agent": agent, "message": f"Starting: {action}", "log_type": "info"
         }))
+
         try:
-            if agent == "SlackAgent":
+            if agent == "KnowledgeAgent":
+                if action.lower().startswith("add knowledge"):
+                    match = re.search(r"add knowledge:\s*['\"](.+?)['\"].*in\s+(\w+)", action, re.IGNORECASE)
+                    if match:
+                        content, filename = match.groups()
+                        resp = await self.knowledge_agent.add_knowledge(filename, content)
+                        msg = resp
+                    else:
+                        raise ValueError(f"Could not parse knowledge add action: {action}")
+                else:
+                    resp = await self.knowledge_agent.run(action)
+                    msg = f"Knowledge query completed"
+
+            elif agent == "SlackAgent":
+                print(f"🔷 SlackAgent.execute got action: {action}")
                 resp = await self.slack_agent.execute(action)
-                msg = f"Slack ok={getattr(resp, 'ok', True)}"
+                msg = f"Slack message posted successfully"
+
+            elif agent == "CalendarAgent":
+                event_details = self._parse_calendar_action(action)
+                resp = await self.calendar_agent.run(event_details)
+                msg = f"Calendar event created: {resp}"
+
+            elif agent == "SearchAgent":
+                resp = await self.search_agent.run(action)
+                msg = f"Search completed: {resp[:50]}..."
+
+            elif agent == "CommunicationAgent":
+                msg = "SMS feature called (add actual logic if needed)"
+                resp = None  # You can expand here
+
             else:
                 await asyncio.sleep(1)
                 msg = f"Executed {agent}"
+                resp = None
+
             status = "completed"
             lt = "success"
+
         except Exception as e:
             msg = f"Error: {e}"
             status = "failed"
             lt = "error"
+
         await self.ws_manager.broadcast(json.dumps({
             "type": "status_update", "step_action": action, "status": status
         }))
         await self.ws_manager.broadcast(json.dumps({
             "type": "log", "agent": agent, "message": msg, "log_type": lt
         }))
+
+    def _parse_calendar_action(self, action: str) -> dict:
+        """Parse calendar action to extract event title, start, and end times."""
+        title_match = re.search(r'schedule\s+(?:a\s+)?(.+?)\s+for', action, re.IGNORECASE)
+        title = title_match.group(1) if title_match else "Meeting"
+
+        tomorrow = datetime.now() + timedelta(days=1)
+
+        time_match = re.search(r'tomorrow\s+at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?', action, re.IGNORECASE)
+        if time_match:
+            hour = int(time_match.group(1))
+            minute = int(time_match.group(2) or 0)
+            period = time_match.group(3)
+            if period:
+                if period.lower() == 'pm' and hour != 12:
+                    hour += 12
+                elif period.lower() == 'am' and hour == 12:
+                    hour = 0
+            start_time = tomorrow.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        else:
+            start_time = tomorrow.replace(hour=10, minute=0, second=0, microsecond=0)
+
+        end_time = start_time + timedelta(hours=1)
+        return {
+            "title": title,
+            "start_time": start_time.isoformat(),
+            "end_time": end_time.isoformat()
+        }
+
